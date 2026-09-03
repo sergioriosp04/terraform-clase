@@ -25,12 +25,47 @@ resource "aws_subnet" "SN-lab-2" {
   vpc_id            = aws_vpc.VPC-lab-2.id
   cidr_block        = each.value.cidr
   availability_zone = "${var.aws_region}${each.value.az}"
-  # map_public_ip_on_launch: si es true, las instancias que se lancen acá
-  # reciben IP pública automática. Por sí solo NO hace que la subnet sea
-  # "pública" (eso lo define la route table hacia un Internet Gateway).
-  map_public_ip_on_launch = each.value.public
   tags = {
     Name = "SN-lab-2-${each.key}"
     Env  = "test"
   }
+}
+
+############ Internet Gateway ############
+# Puerta de entrada/salida entre la VPC e internet. Se adjunta una sola vez
+# por VPC y es lo que le permite a las subnets públicas tener ruta directa
+# hacia afuera (0.0.0.0/0).
+resource "aws_internet_gateway" "IGW-lab-2" {
+  vpc_id = aws_vpc.VPC-lab-2.id
+  tags = {
+    Name = "IGW-lab-2"
+    Env  = "test"
+  }
+}
+
+############ NAT Gateway ############
+# El NAT Gateway permite que instancias en subnets privadas salgan a
+# internet (para updates, descargar paquetes, etc) sin ser accesibles
+# desde afuera. A diferencia del IGW, el NAT necesita una Elastic IP
+# propia y tiene que crearse en una subnet PUBLICA (con ruta al IGW),
+# aunque el tráfico que reenvía venga de las subnets privadas.
+resource "aws_eip" "EIP-nat-lab-2" {
+  domain = "vpc"
+  tags = {
+    Name = "EIP-nat-lab-2"
+    Env  = "test"
+  }
+}
+
+resource "aws_nat_gateway" "NAT-lab-2" {
+  allocation_id = aws_eip.EIP-nat-lab-2.id
+  subnet_id     = aws_subnet.SN-lab-2["front-1"].id
+
+  tags = {
+    Name = "NAT-lab-2"
+    Env  = "test"
+  }
+
+  # El NAT depende de que el IGW ya exista, si no falla la creación.
+  depends_on = [aws_internet_gateway.IGW-lab-2]
 }
