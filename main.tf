@@ -58,8 +58,8 @@ resource "aws_eip" "EIP-nat-lab-2" {
 }
 
 resource "aws_nat_gateway" "NAT-lab-2" {
-  allocation_id = aws_eip.EIP-nat-lab-2.id
-  subnet_id     = aws_subnet.SN-lab-2["front-1"].id
+  allocation_id     = aws_eip.EIP-nat-lab-2.id
+  subnet_id         = aws_subnet.SN-lab-2["front-1"].id
   connectivity_type = "public"
 
   tags = {

@@ -5,8 +5,13 @@ terraform {
       version = "~> 6.0"
     }
   }
-  backend "local" {
-    path = "terraform.tfstate"
+  backend "s3" {
+    bucket       = "itm-seminario-lab-2"
+    key          = "tfstate/terraform.tfstate"
+    use_lockfile = true
+    region       = "us-east-1"
+    encrypt      = true
+    profile      = "seminario"
   }
 }
 
