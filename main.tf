@@ -60,6 +60,7 @@ resource "aws_eip" "EIP-nat-lab-2" {
 resource "aws_nat_gateway" "NAT-lab-2" {
   allocation_id = aws_eip.EIP-nat-lab-2.id
   subnet_id     = aws_subnet.SN-lab-2["front-1"].id
+  connectivity_type = "public"
 
   tags = {
     Name = "NAT-lab-2"
@@ -68,4 +69,44 @@ resource "aws_nat_gateway" "NAT-lab-2" {
 
   # El NAT depende de que el IGW ya exista, si no falla la creación.
   depends_on = [aws_internet_gateway.IGW-lab-2]
+}
+
+############ Route Tables ############
+# Una route table define hacia dónde se manda el tráfico según su destino.
+# Necesitamos dos: una pública (sale directo por el IGW) y una privada
+# (sale por el NAT). Cada subnet se asocia a una u otra según su flag
+# `public` en var.subnets.
+resource "aws_route_table" "RT-public-lab-2" {
+  vpc_id = aws_vpc.VPC-lab-2.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.IGW-lab-2.id
+  }
+
+  tags = {
+    Name = "RT-public-lab-2"
+    Env  = "test"
+  }
+}
+
+resource "aws_route_table" "RT-private-lab-2" {
+  vpc_id = aws_vpc.VPC-lab-2.id
+
+  route {
+    cidr_block     = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.NAT-lab-2.id
+  }
+
+  tags = {
+    Name = "RT-private-lab-2"
+    Env  = "test"
+  }
+}
+
+resource "aws_route_table_association" "RTA-lab-2" {
+  for_each = var.subnets
+
+  subnet_id      = aws_subnet.SN-lab-2[each.key].id
+  route_table_id = each.value.public ? aws_route_table.RT-public-lab-2.id : aws_route_table.RT-private-lab-2.id
 }
