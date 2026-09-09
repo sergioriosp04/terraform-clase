@@ -110,3 +110,259 @@ resource "aws_route_table_association" "RTA-lab-2" {
   subnet_id      = aws_subnet.SN-lab-2[each.key].id
   route_table_id = each.value.public ? aws_route_table.RT-public-lab-2.id : aws_route_table.RT-private-lab-2.id
 }
+
+############ Network ACLs ############
+# Las NACLs filtran tráfico a nivel de subnet y son stateless (a diferencia
+# de los Security Groups, hay que permitir explícitamente ida y vuelta).
+# Acá van por tier (front/back/db), armando una topología en estrella
+# donde back es el punto central: front <-> back <-> db, y front <-> db
+# queda bloqueado (no hay ninguna regla que lo permita).
+#
+# Cada aws_network_acl se crea vacía (sin ingress/egress inline) y las
+# reglas se agregan una por una con aws_network_acl_rule, para que quede
+# claro qué hace cada regla individualmente.
+
+resource "aws_network_acl" "NACL-front-lab-2" {
+  vpc_id = aws_vpc.VPC-lab-2.id
+  subnet_ids = [
+    aws_subnet.SN-lab-2["front-1"].id,
+    aws_subnet.SN-lab-2["front-2"].id,
+  ]
+
+  tags = {
+    Name = "NACL-front-lab-2"
+    Env  = "test"
+  }
+}
+
+resource "aws_network_acl" "NACL-back-lab-2" {
+  vpc_id = aws_vpc.VPC-lab-2.id
+  subnet_ids = [
+    aws_subnet.SN-lab-2["back-1"].id,
+    aws_subnet.SN-lab-2["back-2"].id,
+  ]
+
+  tags = {
+    Name = "NACL-back-lab-2"
+    Env  = "test"
+  }
+}
+
+resource "aws_network_acl" "NACL-db-lab-2" {
+  vpc_id = aws_vpc.VPC-lab-2.id
+  subnet_ids = [
+    aws_subnet.SN-lab-2["db-1"].id,
+    aws_subnet.SN-lab-2["db-2"].id,
+  ]
+
+  tags = {
+    Name = "NACL-db-lab-2"
+    Env  = "test"
+  }
+}
+
+############ Network ACL Rules ############
+# --- NACL-front: solo permite entrada/salida hacia las subnets de back ---
+resource "aws_network_acl_rule" "NACLR-front-in-back-1" {
+  network_acl_id = aws_network_acl.NACL-front-lab-2.id
+  rule_number    = 100
+  egress         = false
+  protocol       = "-1"
+  rule_action    = "allow"
+  cidr_block     = var.subnets["back-1"].cidr
+  from_port      = 0
+  to_port        = 0
+}
+
+resource "aws_network_acl_rule" "NACLR-front-in-back-2" {
+  network_acl_id = aws_network_acl.NACL-front-lab-2.id
+  rule_number    = 200
+  egress         = false
+  protocol       = "-1"
+  rule_action    = "allow"
+  cidr_block     = var.subnets["back-2"].cidr
+  from_port      = 0
+  to_port        = 0
+}
+
+resource "aws_network_acl_rule" "NACLR-front-out-back-1" {
+  network_acl_id = aws_network_acl.NACL-front-lab-2.id
+  rule_number    = 100
+  egress         = true
+  protocol       = "-1"
+  rule_action    = "allow"
+  cidr_block     = var.subnets["back-1"].cidr
+  from_port      = 0
+  to_port        = 0
+}
+
+resource "aws_network_acl_rule" "NACLR-front-out-back-2" {
+  network_acl_id = aws_network_acl.NACL-front-lab-2.id
+  rule_number    = 200
+  egress         = true
+  protocol       = "-1"
+  rule_action    = "allow"
+  cidr_block     = var.subnets["back-2"].cidr
+  from_port      = 0
+  to_port        = 0
+}
+
+# Front también queda expuesto a internet: entra cualquiera (All Traffic
+# desde 0.0.0.0/0) y, como la NACL es stateless, hace falta la regla de
+# salida aparte para que la respuesta pueda volver por los puertos
+# efímeros del cliente (Custom TCP 1025-65535).
+resource "aws_network_acl_rule" "NACLR-front-in-internet" {
+  network_acl_id = aws_network_acl.NACL-front-lab-2.id
+  rule_number    = 300
+  egress         = false
+  protocol       = "-1"
+  rule_action    = "allow"
+  cidr_block     = "0.0.0.0/0"
+  from_port      = 0
+  to_port        = 0
+}
+
+resource "aws_network_acl_rule" "NACLR-front-out-internet-ephemeral" {
+  network_acl_id = aws_network_acl.NACL-front-lab-2.id
+  rule_number    = 300
+  egress         = true
+  protocol       = "tcp"
+  rule_action    = "allow"
+  cidr_block     = "0.0.0.0/0"
+  from_port      = 1025
+  to_port        = 65535
+}
+
+# --- NACL-back: permite entrada/salida hacia front y hacia db ---
+resource "aws_network_acl_rule" "NACLR-back-in-front-1" {
+  network_acl_id = aws_network_acl.NACL-back-lab-2.id
+  rule_number    = 100
+  egress         = false
+  protocol       = "-1"
+  rule_action    = "allow"
+  cidr_block     = var.subnets["front-1"].cidr
+  from_port      = 0
+  to_port        = 0
+}
+
+resource "aws_network_acl_rule" "NACLR-back-in-front-2" {
+  network_acl_id = aws_network_acl.NACL-back-lab-2.id
+  rule_number    = 200
+  egress         = false
+  protocol       = "-1"
+  rule_action    = "allow"
+  cidr_block     = var.subnets["front-2"].cidr
+  from_port      = 0
+  to_port        = 0
+}
+
+resource "aws_network_acl_rule" "NACLR-back-in-db-1" {
+  network_acl_id = aws_network_acl.NACL-back-lab-2.id
+  rule_number    = 300
+  egress         = false
+  protocol       = "-1"
+  rule_action    = "allow"
+  cidr_block     = var.subnets["db-1"].cidr
+  from_port      = 0
+  to_port        = 0
+}
+
+resource "aws_network_acl_rule" "NACLR-back-in-db-2" {
+  network_acl_id = aws_network_acl.NACL-back-lab-2.id
+  rule_number    = 400
+  egress         = false
+  protocol       = "-1"
+  rule_action    = "allow"
+  cidr_block     = var.subnets["db-2"].cidr
+  from_port      = 0
+  to_port        = 0
+}
+
+resource "aws_network_acl_rule" "NACLR-back-out-front-1" {
+  network_acl_id = aws_network_acl.NACL-back-lab-2.id
+  rule_number    = 100
+  egress         = true
+  protocol       = "-1"
+  rule_action    = "allow"
+  cidr_block     = var.subnets["front-1"].cidr
+  from_port      = 0
+  to_port        = 0
+}
+
+resource "aws_network_acl_rule" "NACLR-back-out-front-2" {
+  network_acl_id = aws_network_acl.NACL-back-lab-2.id
+  rule_number    = 200
+  egress         = true
+  protocol       = "-1"
+  rule_action    = "allow"
+  cidr_block     = var.subnets["front-2"].cidr
+  from_port      = 0
+  to_port        = 0
+}
+
+resource "aws_network_acl_rule" "NACLR-back-out-db-1" {
+  network_acl_id = aws_network_acl.NACL-back-lab-2.id
+  rule_number    = 300
+  egress         = true
+  protocol       = "-1"
+  rule_action    = "allow"
+  cidr_block     = var.subnets["db-1"].cidr
+  from_port      = 0
+  to_port        = 0
+}
+
+resource "aws_network_acl_rule" "NACLR-back-out-db-2" {
+  network_acl_id = aws_network_acl.NACL-back-lab-2.id
+  rule_number    = 400
+  egress         = true
+  protocol       = "-1"
+  rule_action    = "allow"
+  cidr_block     = var.subnets["db-2"].cidr
+  from_port      = 0
+  to_port        = 0
+}
+
+# --- NACL-db: solo permite entrada/salida hacia las subnets de back ---
+resource "aws_network_acl_rule" "NACLR-db-in-back-1" {
+  network_acl_id = aws_network_acl.NACL-db-lab-2.id
+  rule_number    = 100
+  egress         = false
+  protocol       = "-1"
+  rule_action    = "allow"
+  cidr_block     = var.subnets["back-1"].cidr
+  from_port      = 0
+  to_port        = 0
+}
+
+resource "aws_network_acl_rule" "NACLR-db-in-back-2" {
+  network_acl_id = aws_network_acl.NACL-db-lab-2.id
+  rule_number    = 200
+  egress         = false
+  protocol       = "-1"
+  rule_action    = "allow"
+  cidr_block     = var.subnets["back-2"].cidr
+  from_port      = 0
+  to_port        = 0
+}
+
+resource "aws_network_acl_rule" "NACLR-db-out-back-1" {
+  network_acl_id = aws_network_acl.NACL-db-lab-2.id
+  rule_number    = 100
+  egress         = true
+  protocol       = "-1"
+  rule_action    = "allow"
+  cidr_block     = var.subnets["back-1"].cidr
+  from_port      = 0
+  to_port        = 0
+}
+
+resource "aws_network_acl_rule" "NACLR-db-out-back-2" {
+  network_acl_id = aws_network_acl.NACL-db-lab-2.id
+  rule_number    = 200
+  egress         = true
+  protocol       = "-1"
+  rule_action    = "allow"
+  cidr_block     = var.subnets["back-2"].cidr
+  from_port      = 0
+  to_port        = 0
+}
