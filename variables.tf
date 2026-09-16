@@ -10,43 +10,15 @@ variable "vpc_cidr" {
   default = "192.168.1.0/24"
 }
 
-variable "subnets" {
-  default = {
-    front-1 = {
-      cidr   = "192.168.1.0/27"
-      az     = "a"
-      public = true
-      tier   = "front"
-    }
-    front-2 = {
-      cidr   = "192.168.1.32/27"
-      az     = "b"
-      public = true
-      tier   = "front"
-    }
-    back-1 = {
-      cidr   = "192.168.1.64/27"
-      az     = "a"
-      public = false
-      tier   = "back"
-    }
-    back-2 = {
-      cidr   = "192.168.1.96/27"
-      az     = "b"
-      public = false
-      tier   = "back"
-    }
-    db-1 = {
-      cidr   = "192.168.1.128/27"
-      az     = "a"
-      public = false
-      tier   = "db"
-    }
-    db-2 = {
-      cidr   = "192.168.1.160/27"
-      az     = "b"
-      public = false
-      tier   = "db"
-    }
-  }
+variable "pub_subnets" {
+  default = ["192.168.1.0/27", "192.168.1.32/27"]
+}
+
+variable "priv_subnets" {
+  default = [
+    "192.168.1.64/27",
+    "192.168.1.96/27",
+    "192.168.1.128/27",
+    "192.168.1.160/27",
+  ]
 }
