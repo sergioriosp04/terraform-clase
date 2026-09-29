@@ -22,3 +22,8 @@ variable "priv_subnets" {
     "192.168.1.160/27",
   ]
 }
+
+variable "key_name" {
+  description = "Name of an existing EC2 key pair"
+  type        = string
+}
