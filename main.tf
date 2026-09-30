@@ -15,3 +15,11 @@ module "compute" {
   sg_id     = module.security.sg_id
   key_name  = var.key_name
 }
+
+module "load_balancer" {
+  source      = "./modules/load_balancer"
+  vpc_id      = module.network.vpc_id
+  subnet_ids  = module.network.public_subnet_ids
+  sg_id       = module.security.alb_sg_id
+  instance_id = module.compute.instance_id
+}

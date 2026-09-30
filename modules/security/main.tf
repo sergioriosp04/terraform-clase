@@ -29,3 +29,33 @@ resource "aws_security_group" "allow_all" {
     Name = "SG-AllowAll-${terraform.workspace}"
   }
 }
+
+########### Security Group del Load Balancer ############
+# SG exclusivo para el ALB: solo deja entrar HTTP (puerto 80) desde
+# cualquier IP de internet. La salida queda abierta para que el ALB pueda
+# reenviar el tráfico a las instancias y hacer los health checks.
+resource "aws_security_group" "alb" {
+  name        = "SG-ALB-${terraform.workspace}"
+  description = "Allow HTTP inbound traffic to the load balancer"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    description = "HTTP from internet"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    description = "All outbound traffic"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "SG-ALB-${terraform.workspace}"
+  }
+}
