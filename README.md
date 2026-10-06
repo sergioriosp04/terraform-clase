@@ -3,8 +3,11 @@
 Laboratorio de Terraform en AWS (`us-east-1`) organizado en módulos:
 
 - `modules/network`: VPC, subnets públicas y privadas, Internet Gateway, NAT Gateway y route tables.
-- `modules/security`: security group que permite todo el tráfico (solo laboratorio).
-- `modules/compute`: instancia EC2 con Amazon Linux, disco de 20 GB y un user data que instala Apache.
+- `modules/security`: security group de la EC2 (permite todo el tráfico, solo laboratorio) y security group del ALB (solo HTTP 80).
+- `modules/compute`: instancia EC2 con Amazon Linux en una subnet **privada** (sin IP pública), disco de 20 GB y un user data que instala Apache.
+- `modules/load_balancer`: Application Load Balancer en las subnets públicas, target group, listener HTTP 80 y registro de la EC2 en el target group.
+
+Flujo del tráfico: `Internet → ALB (subnets públicas) → IP privada de la EC2:80 → Apache`. La EC2 sale a internet (para instalar paquetes) por el NAT Gateway.
 
 El estado se guarda en el bucket S3 `itm-seminario-lab-2` (ver `providers.tf`).
 
@@ -63,31 +66,26 @@ terraform plan -var-file=environments/dev.tfvars
 # 5. Crear la infraestructura
 terraform apply -var-file=environments/dev.tfvars
 
-# 6. Ver la IP pública de la EC2
-terraform output ec2_public_ip
+# 6. Ver el DNS del load balancer y la IP privada de la EC2
+terraform output alb_dns_name
+terraform output ec2_private_ip
 ```
 
 ## Probar la instancia
 
-Esperar 1-2 minutos después del `apply` para que termine el user data y abrir en el navegador:
+Esperar 2-3 minutos después del `apply` (el ALB tiene que quedar activo y la EC2 pasar el health check) y abrir en el navegador, **con `http://`** (el ALB no escucha HTTPS):
 
 ```
-http://<ec2_public_ip>
+http://<alb_dns_name>
 ```
 
-Conectarse por SSH:
+La EC2 no tiene IP pública, así que no se puede entrar por SSH directo desde internet. Para revisar el log del user data sin conectarse: consola de EC2 → la instancia → *Actions* → *Monitor and troubleshoot* → *Get system log*.
 
-```bash
-chmod 400 KP-lab-1.pem
-ssh -i KP-lab-1.pem ec2-user@<ec2_public_ip>
-
-# Si la página no carga, revisar el log del user data
-sudo cat /var/log/cloud-init-output.log
-```
+Para ver a qué instancia está atado el ALB: consola de EC2 → *Target Groups* → `TG-Web-dev` → pestaña *Targets* (debe decir `healthy`).
 
 ## Destruir
 
-El NAT Gateway y la Elastic IP generan costo por hora, así que hay que destruir todo al terminar el laboratorio:
+El NAT Gateway, la Elastic IP y el load balancer generan costo por hora, así que hay que destruir todo al terminar el laboratorio:
 
 ```bash
 terraform destroy -var-file=environments/dev.tfvars

@@ -11,7 +11,7 @@ module "security" {
 
 module "compute" {
   source    = "./modules/compute"
-  subnet_id = module.network.public_subnet_ids[0]
+  subnet_id = module.network.private_subnet_ids[0]
   sg_id     = module.security.sg_id
   key_name  = var.key_name
 }
